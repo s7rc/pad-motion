@@ -184,7 +184,8 @@ fn compute_checksum(packet: &[u8]) -> u32 {
       *byte = 0;
   }
 
-  crc::crc32::checksum_ieee(&packet)
+  // UPDATED: Using crc32fast::hash instead of crc::crc32::checksum_ieee
+  crc32fast::hash(&packet)
 }
 
 pub fn encode_message(writer: &mut Vec<u8>, message: Message) -> Result<()> {
