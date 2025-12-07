@@ -26,4 +26,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: windows
-        path: D:\a\pad-motion\pad-motion\bin
+        path: D:\a\pad-motion\pad-motion\target\release\examples
