@@ -111,7 +111,8 @@ fn main() {
           gyroscope_pitch: -delta_rotation_y * 3.0,
           
           // Map horizontal mouse movement to Yaw (Left/Right Panning)
-          gyroscope_yaw: -delta_rotation_x * 3.0,
+          // FIXED: Removed negative sign to fix inversion
+          gyroscope_yaw: delta_rotation_x * 3.0,
           
           // Disable Roll (steering wheel turning) entirely
           gyroscope_roll: 0.0,
@@ -126,7 +127,8 @@ fn main() {
           
           // --- CHANGED SECTION START ---
           gyroscope_pitch: -delta_rotation_y * 3.0,
-          gyroscope_yaw: -delta_rotation_x * 3.0,
+          // FIXED: Removed negative sign to fix inversion
+          gyroscope_yaw: delta_rotation_x * 3.0,
           gyroscope_roll: 0.0,
           // --- CHANGED SECTION END ---
 
