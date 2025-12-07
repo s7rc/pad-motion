@@ -105,18 +105,31 @@ fn main() {
           analog_r2: analog_button_value(Button::RightTrigger2),
           analog_l2: analog_button_value(Button::LeftTrigger2),
           motion_data_timestamp: now.elapsed().as_micros() as u64,
+          
+          // --- CHANGED SECTION START ---
+          // Map vertical mouse movement to Pitch (Up/Down)
           gyroscope_pitch: -delta_rotation_y * 3.0,
-          gyroscope_roll: -delta_rotation_x * 2.0,
-          gyroscope_yaw: delta_mouse_wheel * 300.0,
+          
+          // Map horizontal mouse movement to Yaw (Left/Right Panning)
+          gyroscope_yaw: -delta_rotation_x * 3.0,
+          
+          // Disable Roll (steering wheel turning) entirely
+          gyroscope_roll: 0.0,
+          // --- CHANGED SECTION END ---
+
           .. Default::default()
         }
       } else {
         ControllerData {
           connected: true,
           motion_data_timestamp: now.elapsed().as_micros() as u64,
+          
+          // --- CHANGED SECTION START ---
           gyroscope_pitch: -delta_rotation_y * 3.0,
-          gyroscope_roll: -delta_rotation_x * 2.0,
-          gyroscope_yaw: delta_mouse_wheel * 300.0,
+          gyroscope_yaw: -delta_rotation_x * 3.0,
+          gyroscope_roll: 0.0,
+          // --- CHANGED SECTION END ---
+
           .. Default::default()
         }
       }
