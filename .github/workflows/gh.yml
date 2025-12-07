@@ -1,0 +1,29 @@
+name: build
+
+on:
+  workflow_dispatch:
+  
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build
+      run: cargo build --examples --release
+      
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows
+        path: .
