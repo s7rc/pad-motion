@@ -40,11 +40,20 @@ fn main() {
   let mut mouse_manager = RawInputManager::new().unwrap();
   mouse_manager.register_devices(multiinput::DeviceType::Mice);
 
-  // SENSITIVITY SETTING:
-  // Because we increased the loop speed by 10x (1ms vs 10ms), we effectively 
-  // decreased the mouse counts per loop. We multiply by 30.0 (instead of 3.0) 
-  // to maintain the original feel. Increase/Decrease this value to change speed.
-  const SENSITIVITY: f32 = 30.0;
+  // --- SETTINGS ---
+  // MOMENTUM (0.0 to 0.99): 
+  // Higher = Smoother but "slidey". Lower = Snappier but jittery.
+  // 0.85 is a good balance for 1ms loops.
+  const MOMENTUM: f32 = 0.85; 
+
+  // SENSITIVITY:
+  // Since we are accumulating momentum, we lower this value slightly 
+  // compared to the raw version. Adjust this to make it faster/slower.
+  const SENSITIVITY: f32 = 4.0; 
+
+  // State variables for smoothing
+  let mut smooth_x = 0.0;
+  let mut smooth_y = 0.0;
 
   let now = Instant::now();
   while running.load(Ordering::SeqCst) {
@@ -55,6 +64,8 @@ fn main() {
     let mut delta_rotation_x = 0.0;
     let mut delta_rotation_y = 0.0;
     let mut delta_mouse_wheel = 0.0;
+    
+    // Collect all mouse events that happened in this tiny 1ms window
     while let Some(event) = mouse_manager.get_event() {
       match event {
         RawEvent::MouseMoveEvent(_mouse_id, delta_x, delta_y) => {
@@ -67,6 +78,12 @@ fn main() {
         _ => ()
       }
     }
+
+    // --- SMOOTHING LOGIC ---
+    // Apply the new input to our running total, then decay it.
+    // This fills in the "gaps" between mouse updates, preventing the "freak out".
+    smooth_x = (smooth_x * MOMENTUM) + (delta_rotation_x * SENSITIVITY);
+    smooth_y = (smooth_y * MOMENTUM) + (delta_rotation_y * SENSITIVITY);
 
     let first_gamepad = gilrs.gamepads().next();
     let controller_data = {
@@ -112,17 +129,13 @@ fn main() {
           analog_l2: analog_button_value(Button::LeftTrigger2),
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
-          // --- STABILITY FIX: GRAVITY VECTOR ---
-          // Setting Z to 1.0 (1G) tells the game the controller is flat.
-          // This prevents "drift" where turning left/right translates to down movement.
-          accelerometer_z: 1.0, 
+          // --- GRAVITY FIX ---
+          accelerometer_z: 1.0,
           
-          // Map vertical mouse movement to Pitch (Up/Down)
-          gyroscope_pitch: -delta_rotation_y * SENSITIVITY,
-          
-          // Map horizontal mouse movement to Yaw (Left/Right Panning)
-          gyroscope_yaw: delta_rotation_x * SENSITIVITY,
-          
+          // --- SMOOTHED MOUSE MAPPING ---
+          // Using smooth_y and smooth_x instead of raw delta
+          gyroscope_pitch: -smooth_y,
+          gyroscope_yaw: smooth_x,
           gyroscope_roll: 0.0,
 
           .. Default::default()
@@ -132,12 +145,12 @@ fn main() {
           connected: true,
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
-          // --- STABILITY FIX: GRAVITY VECTOR ---
+          // --- GRAVITY FIX ---
           accelerometer_z: 1.0, 
 
-          // --- MOUSE MAPPING ---
-          gyroscope_pitch: -delta_rotation_y * SENSITIVITY,
-          gyroscope_yaw: delta_rotation_x * SENSITIVITY,
+          // --- SMOOTHED MOUSE MAPPING ---
+          gyroscope_pitch: -smooth_y,
+          gyroscope_yaw: smooth_x,
           gyroscope_roll: 0.0,
 
           .. Default::default()
@@ -147,7 +160,7 @@ fn main() {
 
     server.update_controller_data(0, controller_data);
 
-    // RESPONSIVENESS FIX: Reduced from 10ms to 1ms
+    // EXTREME RESPONSIVENESS: 1ms (1000Hz)
     std::thread::sleep(Duration::from_millis(1));
   }
 
