@@ -40,15 +40,15 @@ fn main() {
   let mut mouse_manager = RawInputManager::new().unwrap();
   mouse_manager.register_devices(multiinput::DeviceType::Mice);
 
-  // --- TUNING ---
-  // DECAY: Controls smoothing. 0.0 = Instant/Jittery, 0.99 = Very Slow/Floaty.
-  // 0.95 is good for 1ms loops to fix the "freak out".
-  const DECAY: f32 = 0.95; 
+  // --- TUNING UPDATED ---
+  // DECAY: Lowered from 0.95 to 0.60. 
+  // This removes the "lag" or "floaty" feeling, making it snappy again.
+  const DECAY: f32 = 0.60; 
 
   // SENSITIVITY: 
-  // Multiplier for speed. Higher = Faster. 
-  // Increased to 50.0 to compensate for the 1ms loop and decay.
-  const SENSITIVITY: f32 = 50.0; 
+  // Lowered from 50.0 to 15.0.
+  // This stops it from being "too fast" now that the lag is gone.
+  const SENSITIVITY: f32 = 15.0; 
 
   // SMOOTHING STATE
   let mut velocity_x = 0.0;
@@ -74,9 +74,9 @@ fn main() {
       }
     }
 
-    // --- MOMENTUM SMOOTHING ---
-    // Instead of sending raw spikes, we add to velocity and decay it.
-    // This creates fluid motion even at 1000Hz.
+    // --- SNAPPIER SMOOTHING ---
+    // With DECAY at 0.60, 40% of your mouse movement is applied INSTANTLY.
+    // This fixes the "not responsive enough" feeling.
     velocity_x = (velocity_x * DECAY) + (delta_rotation_x * SENSITIVITY * (1.0 - DECAY));
     velocity_y = (velocity_y * DECAY) + (delta_rotation_y * SENSITIVITY * (1.0 - DECAY));
 
@@ -125,8 +125,7 @@ fn main() {
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
           // --- GRAVITY FIX ---
-          // Updated to 9.81 (Standard Gravity m/s^2).
-          // 1.0 was likely too weak, causing the "turns by itself" drift.
+          // Keeps the cursor stable when turning.
           accelerometer_z: 9.81,
           
           // --- SMOOTHED MOTION ---
