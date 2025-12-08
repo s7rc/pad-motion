@@ -40,19 +40,13 @@ fn main() {
   let mut mouse_manager = RawInputManager::new().unwrap();
   mouse_manager.register_devices(multiinput::DeviceType::Mice);
 
-  // --- TUNING UPDATED ---
-  // DECAY: Lowered from 0.95 to 0.60. 
-  // This removes the "lag" or "floaty" feeling, making it snappy again.
-  const DECAY: f32 = 0.60; 
-
+  // --- NATIVE FEEL SETTINGS ---
+  // No DECAY. No SMOOTHING. Raw Input.
+  
   // SENSITIVITY: 
-  // Lowered from 50.0 to 15.0.
-  // This stops it from being "too fast" now that the lag is gone.
-  const SENSITIVITY: f32 = 15.0; 
-
-  // SMOOTHING STATE
-  let mut velocity_x = 0.0;
-  let mut velocity_y = 0.0;
+  // Adjusted for raw 1ms input. 
+  // If it feels too slow, try 8.0. If it jitters/shakes, try 3.0.
+  const SENSITIVITY: f32 = 5.0; 
 
   let now = Instant::now();
   while running.load(Ordering::SeqCst) {
@@ -74,11 +68,12 @@ fn main() {
       }
     }
 
-    // --- SNAPPIER SMOOTHING ---
-    // With DECAY at 0.60, 40% of your mouse movement is applied INSTANTLY.
-    // This fixes the "not responsive enough" feeling.
-    velocity_x = (velocity_x * DECAY) + (delta_rotation_x * SENSITIVITY * (1.0 - DECAY));
-    velocity_y = (velocity_y * DECAY) + (delta_rotation_y * SENSITIVITY * (1.0 - DECAY));
+    // --- RAW MAPPING (Native Feel) ---
+    // We send the mouse movement DIRECTLY to the game. 
+    // No smoothing, no averaging, no momentum. 
+    // This gives you that "1:1" cursor feel.
+    let gyro_yaw = delta_rotation_x * SENSITIVITY;
+    let gyro_pitch = -delta_rotation_y * SENSITIVITY;
 
     let first_gamepad = gilrs.gamepads().next();
     let controller_data = {
@@ -125,12 +120,12 @@ fn main() {
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
           // --- GRAVITY FIX ---
-          // Keeps the cursor stable when turning.
+          // Keeps the horizon stable.
           accelerometer_z: 9.81,
           
-          // --- SMOOTHED MOTION ---
-          gyroscope_pitch: -velocity_y,
-          gyroscope_yaw: velocity_x,
+          // --- RAW MOTION ---
+          gyroscope_pitch: gyro_pitch,
+          gyroscope_yaw: gyro_yaw,
           gyroscope_roll: 0.0,
 
           .. Default::default()
@@ -143,9 +138,9 @@ fn main() {
           // --- GRAVITY FIX ---
           accelerometer_z: 9.81, 
 
-          // --- SMOOTHED MOTION ---
-          gyroscope_pitch: -velocity_y,
-          gyroscope_yaw: velocity_x,
+          // --- RAW MOTION ---
+          gyroscope_pitch: gyro_pitch,
+          gyroscope_yaw: gyro_yaw,
           gyroscope_roll: 0.0,
 
           .. Default::default()
