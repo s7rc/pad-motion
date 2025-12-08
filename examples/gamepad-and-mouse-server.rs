@@ -40,6 +40,12 @@ fn main() {
   let mut mouse_manager = RawInputManager::new().unwrap();
   mouse_manager.register_devices(multiinput::DeviceType::Mice);
 
+  // SENSITIVITY SETTING:
+  // Because we increased the loop speed by 10x (1ms vs 10ms), we effectively 
+  // decreased the mouse counts per loop. We multiply by 30.0 (instead of 3.0) 
+  // to maintain the original feel. Increase/Decrease this value to change speed.
+  const SENSITIVITY: f32 = 30.0;
+
   let now = Instant::now();
   while running.load(Ordering::SeqCst) {
     // Consume controller events
@@ -106,17 +112,18 @@ fn main() {
           analog_l2: analog_button_value(Button::LeftTrigger2),
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
-          // --- CHANGED SECTION START ---
+          // --- STABILITY FIX: GRAVITY VECTOR ---
+          // Setting Z to 1.0 (1G) tells the game the controller is flat.
+          // This prevents "drift" where turning left/right translates to down movement.
+          accelerometer_z: 1.0, 
+          
           // Map vertical mouse movement to Pitch (Up/Down)
-          gyroscope_pitch: -delta_rotation_y * 3.0,
+          gyroscope_pitch: -delta_rotation_y * SENSITIVITY,
           
           // Map horizontal mouse movement to Yaw (Left/Right Panning)
-          // FIXED: Removed negative sign to fix inversion
-          gyroscope_yaw: delta_rotation_x * 3.0,
+          gyroscope_yaw: delta_rotation_x * SENSITIVITY,
           
-          // Disable Roll (steering wheel turning) entirely
           gyroscope_roll: 0.0,
-          // --- CHANGED SECTION END ---
 
           .. Default::default()
         }
@@ -125,12 +132,13 @@ fn main() {
           connected: true,
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
-          // --- CHANGED SECTION START ---
-          gyroscope_pitch: -delta_rotation_y * 3.0,
-          // FIXED: Removed negative sign to fix inversion
-          gyroscope_yaw: delta_rotation_x * 3.0,
+          // --- STABILITY FIX: GRAVITY VECTOR ---
+          accelerometer_z: 1.0, 
+
+          // --- MOUSE MAPPING ---
+          gyroscope_pitch: -delta_rotation_y * SENSITIVITY,
+          gyroscope_yaw: delta_rotation_x * SENSITIVITY,
           gyroscope_roll: 0.0,
-          // --- CHANGED SECTION END ---
 
           .. Default::default()
         }
@@ -139,7 +147,8 @@ fn main() {
 
     server.update_controller_data(0, controller_data);
 
-    std::thread::sleep(Duration::from_millis(10));
+    // RESPONSIVENESS FIX: Reduced from 10ms to 1ms
+    std::thread::sleep(Duration::from_millis(1));
   }
 
   server_thread_join_handle.join().unwrap();
