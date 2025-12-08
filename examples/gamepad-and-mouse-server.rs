@@ -40,20 +40,19 @@ fn main() {
   let mut mouse_manager = RawInputManager::new().unwrap();
   mouse_manager.register_devices(multiinput::DeviceType::Mice);
 
-  // --- SETTINGS ---
-  // MOMENTUM (0.0 to 0.99): 
-  // Higher = Smoother but "slidey". Lower = Snappier but jittery.
-  // 0.85 is a good balance for 1ms loops.
-  const MOMENTUM: f32 = 0.85; 
+  // --- TUNING ---
+  // DECAY: Controls smoothing. 0.0 = Instant/Jittery, 0.99 = Very Slow/Floaty.
+  // 0.95 is good for 1ms loops to fix the "freak out".
+  const DECAY: f32 = 0.95; 
 
-  // SENSITIVITY:
-  // Since we are accumulating momentum, we lower this value slightly 
-  // compared to the raw version. Adjust this to make it faster/slower.
-  const SENSITIVITY: f32 = 4.0; 
+  // SENSITIVITY: 
+  // Multiplier for speed. Higher = Faster. 
+  // Increased to 50.0 to compensate for the 1ms loop and decay.
+  const SENSITIVITY: f32 = 50.0; 
 
-  // State variables for smoothing
-  let mut smooth_x = 0.0;
-  let mut smooth_y = 0.0;
+  // SMOOTHING STATE
+  let mut velocity_x = 0.0;
+  let mut velocity_y = 0.0;
 
   let now = Instant::now();
   while running.load(Ordering::SeqCst) {
@@ -63,27 +62,23 @@ fn main() {
 
     let mut delta_rotation_x = 0.0;
     let mut delta_rotation_y = 0.0;
-    let mut delta_mouse_wheel = 0.0;
     
-    // Collect all mouse events that happened in this tiny 1ms window
+    // Collect all mouse events in this 1ms window
     while let Some(event) = mouse_manager.get_event() {
       match event {
         RawEvent::MouseMoveEvent(_mouse_id, delta_x, delta_y) => {
           delta_rotation_x += delta_x as f32;
           delta_rotation_y += delta_y as f32;
         },
-        RawEvent::MouseWheelEvent(_mouse_id, delta) => {
-          delta_mouse_wheel += delta as f32;          
-        }
         _ => ()
       }
     }
 
-    // --- SMOOTHING LOGIC ---
-    // Apply the new input to our running total, then decay it.
-    // This fills in the "gaps" between mouse updates, preventing the "freak out".
-    smooth_x = (smooth_x * MOMENTUM) + (delta_rotation_x * SENSITIVITY);
-    smooth_y = (smooth_y * MOMENTUM) + (delta_rotation_y * SENSITIVITY);
+    // --- MOMENTUM SMOOTHING ---
+    // Instead of sending raw spikes, we add to velocity and decay it.
+    // This creates fluid motion even at 1000Hz.
+    velocity_x = (velocity_x * DECAY) + (delta_rotation_x * SENSITIVITY * (1.0 - DECAY));
+    velocity_y = (velocity_y * DECAY) + (delta_rotation_y * SENSITIVITY * (1.0 - DECAY));
 
     let first_gamepad = gilrs.gamepads().next();
     let controller_data = {
@@ -130,12 +125,13 @@ fn main() {
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
           // --- GRAVITY FIX ---
-          accelerometer_z: 1.0,
+          // Updated to 9.81 (Standard Gravity m/s^2).
+          // 1.0 was likely too weak, causing the "turns by itself" drift.
+          accelerometer_z: 9.81,
           
-          // --- SMOOTHED MOUSE MAPPING ---
-          // Using smooth_y and smooth_x instead of raw delta
-          gyroscope_pitch: -smooth_y,
-          gyroscope_yaw: smooth_x,
+          // --- SMOOTHED MOTION ---
+          gyroscope_pitch: -velocity_y,
+          gyroscope_yaw: velocity_x,
           gyroscope_roll: 0.0,
 
           .. Default::default()
@@ -146,11 +142,11 @@ fn main() {
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
           // --- GRAVITY FIX ---
-          accelerometer_z: 1.0, 
+          accelerometer_z: 9.81, 
 
-          // --- SMOOTHED MOUSE MAPPING ---
-          gyroscope_pitch: -smooth_y,
-          gyroscope_yaw: smooth_x,
+          // --- SMOOTHED MOTION ---
+          gyroscope_pitch: -velocity_y,
+          gyroscope_yaw: velocity_x,
           gyroscope_roll: 0.0,
 
           .. Default::default()
