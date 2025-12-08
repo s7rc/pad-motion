@@ -1,12 +1,37 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Instant, Duration};
+use std::thread;
+use std::fs;
+use std::collections::HashMap;
 
 use gilrs::{Gilrs, Button, Axis};
 use multiinput::{RawInputManager, RawEvent};
 
 use pad_motion::protocol::*;
 use pad_motion::server::*;
+
+// Default Configuration
+struct AppConfig {
+    sensitivity: f32,
+    invert_x: f32,      // 1.0 or -1.0
+    invert_y: f32,      // 1.0 or -1.0
+    gravity_axis: u8,   // 0=X, 1=Y, 2=Z
+    gravity_amount: f32 // Usually 9.81
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        AppConfig {
+            sensitivity: 5.0,
+            invert_x: -1.0, // Flipped based on your feedback
+            invert_y: 1.0,  // Flipped based on your feedback
+            gravity_axis: 1, // 1 = Y-Axis (Upright/Remote style) to fix "X" movement
+            gravity_amount: 9.81,
+        }
+    }
+}
 
 fn main() {
   let running = Arc::new(AtomicBool::new(true));
@@ -36,17 +61,50 @@ fn main() {
     (input * 127.0 + 127.0) as u8 
   }
 
+  // Shared Config (Thread Safe)
+  let config = Arc::new(Mutex::new(AppConfig::default()));
+
+  // --- CONFIG FILE WATCHER ---
+  // Reads 'config.txt' every second.
+  // Format: key=value (e.g., sensitivity=5.0)
+  {
+      let config = config.clone();
+      let running = running.clone();
+      thread::spawn(move || {
+          while running.load(Ordering::Relaxed) {
+              thread::sleep(Duration::from_secs(1));
+              
+              if let Ok(contents) = fs::read_to_string("config.txt") {
+                  let mut new_config = AppConfig::default(); // Reset to defaults first
+                  
+                  for line in contents.lines() {
+                      if let Some((key, value)) = line.split_once('=') {
+                          let key = key.trim();
+                          let val = value.trim().parse::<f32>().unwrap_or(0.0);
+                          
+                          match key {
+                              "sensitivity" => new_config.sensitivity = val,
+                              "invert_x" => new_config.invert_x = if val > 0.0 { 1.0 } else { -1.0 },
+                              "invert_y" => new_config.invert_y = if val > 0.0 { 1.0 } else { -1.0 },
+                              "gravity_axis" => new_config.gravity_axis = val as u8,
+                              "gravity_amount" => new_config.gravity_amount = val,
+                              _ => {}
+                          }
+                      }
+                  }
+                  
+                  // Update the shared config
+                  if let Ok(mut c) = config.lock() {
+                      *c = new_config;
+                  }
+              }
+          }
+      });
+  }
+
   let mut gilrs = Gilrs::new().unwrap();
   let mut mouse_manager = RawInputManager::new().unwrap();
   mouse_manager.register_devices(multiinput::DeviceType::Mice);
-
-  // --- NATIVE FEEL SETTINGS ---
-  // No DECAY. No SMOOTHING. Raw Input.
-  
-  // SENSITIVITY: 
-  // Adjusted for raw 1ms input. 
-  // If it feels too slow, try 8.0. If it jitters/shakes, try 3.0.
-  const SENSITIVITY: f32 = 5.0; 
 
   let now = Instant::now();
   while running.load(Ordering::SeqCst) {
@@ -57,7 +115,6 @@ fn main() {
     let mut delta_rotation_x = 0.0;
     let mut delta_rotation_y = 0.0;
     
-    // Collect all mouse events in this 1ms window
     while let Some(event) = mouse_manager.get_event() {
       match event {
         RawEvent::MouseMoveEvent(_mouse_id, delta_x, delta_y) => {
@@ -68,12 +125,22 @@ fn main() {
       }
     }
 
-    // --- RAW MAPPING (Native Feel) ---
-    // We send the mouse movement DIRECTLY to the game. 
-    // No smoothing, no averaging, no momentum. 
-    // This gives you that "1:1" cursor feel.
-    let gyro_yaw = delta_rotation_x * SENSITIVITY;
-    let gyro_pitch = -delta_rotation_y * SENSITIVITY;
+    // Capture current config snapshot
+    let (sens, inv_x, inv_y, g_axis, g_val) = {
+        let c = config.lock().unwrap();
+        (c.sensitivity, c.invert_x, c.invert_y, c.gravity_axis, c.gravity_amount)
+    };
+
+    // Apply Sensitivity & Inversion
+    let gyro_yaw = delta_rotation_x * sens * inv_x;
+    let gyro_pitch = delta_rotation_y * sens * inv_y;
+
+    // Apply Gravity Vector (Fixes the "X vs +" rotation issue)
+    let (accel_x, accel_y, accel_z) = match g_axis {
+        0 => (g_val, 0.0, 0.0), // X-Axis (Sideways)
+        1 => (0.0, g_val, 0.0), // Y-Axis (Upright/Pointer) <- DEFAULT
+        _ => (0.0, 0.0, g_val), // Z-Axis (Flat)
+    };
 
     let first_gamepad = gilrs.gamepads().next();
     let controller_data = {
@@ -119,11 +186,10 @@ fn main() {
           analog_l2: analog_button_value(Button::LeftTrigger2),
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
-          // --- GRAVITY FIX ---
-          // Keeps the horizon stable.
-          accelerometer_z: 9.81,
+          accelerometer_x: accel_x,
+          accelerometer_y: accel_y,
+          accelerometer_z: accel_z,
           
-          // --- RAW MOTION ---
           gyroscope_pitch: gyro_pitch,
           gyroscope_yaw: gyro_yaw,
           gyroscope_roll: 0.0,
@@ -135,10 +201,10 @@ fn main() {
           connected: true,
           motion_data_timestamp: now.elapsed().as_micros() as u64,
           
-          // --- GRAVITY FIX ---
-          accelerometer_z: 9.81, 
+          accelerometer_x: accel_x,
+          accelerometer_y: accel_y,
+          accelerometer_z: accel_z,
 
-          // --- RAW MOTION ---
           gyroscope_pitch: gyro_pitch,
           gyroscope_yaw: gyro_yaw,
           gyroscope_roll: 0.0,
@@ -149,8 +215,6 @@ fn main() {
     };
 
     server.update_controller_data(0, controller_data);
-
-    // EXTREME RESPONSIVENESS: 1ms (1000Hz)
     std::thread::sleep(Duration::from_millis(1));
   }
 
